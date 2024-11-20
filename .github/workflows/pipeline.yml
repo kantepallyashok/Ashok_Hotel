@@ -1,0 +1,183 @@
+name: Build, Deploy to AWS ECR, ECS, and Terraform Deployment
+
+on:
+  push:
+    branches:
+    - main
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: 863518440386
+  IMAGE_NAME: ashok_hotel
+  ECS_CLUSTER: ashok_hotel-cluster
+  ECS_SERVICE: ashok_hotel-service
+  TASK_DEFINITION: ashok_hotel_task_definition
+
+jobs:
+  # First Job: Build and Deploy to AWS ECR and ECS
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout the repository
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Configure AWS Credentials
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # Get default VPC ID
+    - name: Get default VPC ID
+      id: vpc_id
+      run: |
+        export VPC_ID=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION)
+        echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
+
+    # Get default Subnet IDs for the VPC
+    - name: Get default Subnet IDs
+      id: subnet_ids
+      run: |
+        export SUBNET_IDS=$(aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC_ID --query 'Subnets[*].SubnetId' --output text --region $AWS_REGION)
+        echo "SUBNET_IDS=$SUBNET_IDS" >> $GITHUB_ENV
+
+    # Check if the ECR repository exists, if not create it
+    - name: Create ECR Repository if not exists
+      run: |
+        aws ecr describe-repositories --repository-names $IMAGE_NAME --region $AWS_REGION || aws ecr create-repository --repository-name $IMAGE_NAME --region $AWS_REGION
+
+    # Build Docker image
+    - name: Build Docker Image
+      run: |
+        docker build -t $IMAGE_NAME:latest .
+
+    # Authenticate Docker to AWS ECR
+    - name: Authenticate Docker to AWS ECR
+      run: |
+        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+    # Tag Docker image
+    - name: Tag Docker Image
+      run: |
+        docker tag $IMAGE_NAME:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_NAME:latest
+
+    # Push Docker image to AWS ECR
+    - name: Push Docker image to AWS ECR
+      run: |
+        docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_NAME:latest
+
+  # Second Job: Terraform Deployment (runs after the Build and Deploy job)
+  terraform-deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-deploy # This ensures the Terraform job runs only after the previous one finishes successfully
+
+    steps:
+    # Checkout the repository
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Configure AWS Credentials
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # Initialize Terraform
+    - name: Terraform Init
+      run: terraform init
+      working-directory: ./terraform
+
+    # Plan Terraform changes
+    - name: Terraform Plan
+      run: terraform plan -out=tfplan
+      working-directory: ./terraform
+
+    # Apply Terraform changes
+    - name: Terraform Apply
+      run: terraform apply -auto-approve tfplan
+      working-directory: ./terraform
+
+  # Third Job: ECS Service Check and Network Binding Retrieval (without Load Balancer)
+  ecs-service-check:
+    runs-on: ubuntu-latest
+    needs: terraform-deploy # Ensures ecs-service-check runs after terraform-deploy
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # Debug Step: Print out ECS_CLUSTER, ECS_SERVICE, and TASK_DEFINITION
+    - name: Debug ECS Variables
+      run: |
+        echo "ECS_CLUSTER: $ECS_CLUSTER"
+        echo "ECS_SERVICE: $ECS_SERVICE"
+        echo "TASK_DEFINITION: $TASK_DEFINITION"
+
+    # Check if ECS Service is Created
+    - name: Check if ECS Service is Created
+      run: |
+        echo "Checking if the ECS service and tasks are created..."
+
+        # Check if the ECS service exists and is stable
+        SERVICE_STATUS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].status' --output text)
+
+        if [ "$SERVICE_STATUS" == "ACTIVE" ]; then
+          echo "ECS Service $ECS_SERVICE is created and ACTIVE."
+        else
+          echo "ECS Service $ECS_SERVICE is not yet created or is not ACTIVE."
+          exit 1
+        fi
+
+        # Check if ECS tasks are created for the service
+        TASKS_STATUS=$(aws ecs list-tasks --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" --query 'taskArns[0]' --output text)
+
+        if [ "$TASKS_STATUS" != "None" ]; then
+          echo "ECS task(s) are created for the service."
+        else
+          echo "No ECS tasks created for the service yet."
+          exit 1
+        fi
+
+    # Wait for 90 seconds to allow ECS task to fully start
+    - name: Wait for ECS Tasks to Start
+      run: |
+        echo "Waiting for 90 seconds for the ECS tasks to fully start..."
+        sleep 90
+
+    # Retrieve the Network Bindings and IP Address of the ECS Task
+    - name: Retrieve ECS Task Public IP Address
+      run: |
+        # Get the task ARN
+        TASK_ARN=$(aws ecs list-tasks --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" --query 'taskArns[0]' --output text)
+
+        # Get the network interface ID from the task
+        TASK_NETWORK_INTERFACE=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text)
+
+        # Retrieve the public IP address from the network interface
+        PUBLIC_IP_ADDRESS=$(aws ec2 describe-network-interfaces --network-interface-ids "$TASK_NETWORK_INTERFACE" --query 'NetworkInterfaces[0].Association.PublicIp' --output text)
+
+        if [ "$PUBLIC_IP_ADDRESS" != "None" ]; then
+          echo "ECS Service Public IP: $PUBLIC_IP_ADDRESS"
+          echo "ECS_PUBLIC_IP=$PUBLIC_IP_ADDRESS" >> $GITHUB_ENV  # Save IP address for later jobs
+          echo "Service is accessible at: http://$PUBLIC_IP_ADDRESS:3000"  # Append the container port (3000)
+
+          # Directly access the public IP using curl
+          echo "Testing the public IP access..."
+          curl -I http://$PUBLIC_IP_ADDRESS:3000  # Perform a quick HTTP request to the public IP on port 3000
+        else
+          echo "No public IP address found for the ECS service."
+          exit 1
+        fi
