@@ -18,6 +18,7 @@ resource "aws_vpc" "new_vpc" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
   enable_dns_hostnames = true
+
   tags = {
     Name = "new-vpc"
   }
@@ -40,7 +41,37 @@ resource "aws_subnet" "public_subnet" {
   }
 }
 
-# Step 5: Security Group for ECS
+# Step 5: Create an Internet Gateway
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.new_vpc.id
+
+  tags = {
+    Name = "new-vpc-igw"
+  }
+}
+
+# Step 6: Create a Route Table
+resource "aws_route_table" "public_rt" {
+  vpc_id = aws_vpc.new_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "public-route-table"
+  }
+}
+
+# Step 7: Associate the Route Table with the Public Subnet
+resource "aws_route_table_association" "public_subnet_assoc" {
+  count          = length(aws_subnet.public_subnet)
+  subnet_id      = aws_subnet.public_subnet[count.index].id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+# Step 8: Security Group for ECS
 resource "aws_security_group" "ecs_sg" {
   vpc_id = aws_vpc.new_vpc.id
 
@@ -63,7 +94,7 @@ resource "aws_security_group" "ecs_sg" {
   }
 }
 
-# Step 6: ECS Cluster
+# Step 9: ECS Cluster
 resource "aws_ecs_cluster" "ashok_hotel_cluster" {
   name = "ashok_hotel-cluster"
 
@@ -77,7 +108,7 @@ resource "aws_ecs_cluster" "ashok_hotel_cluster" {
   }
 }
 
-# Step 7: ECS Task Definition
+# Step 10: ECS Task Definition
 resource "aws_ecs_task_definition" "ashok_hotel_task_definition" {
   family                   = "ashok_hotel"
   execution_role_arn       = "arn:aws:iam::863518440386:role/ecsTaskExecutionRole"
@@ -87,7 +118,7 @@ resource "aws_ecs_task_definition" "ashok_hotel_task_definition" {
   memory                   = "3072"
 
   runtime_platform {
-    cpu_architecture    = "X86_64"
+    cpu_architecture       = "X86_64"
     operating_system_family = "LINUX"
   }
 
@@ -118,7 +149,7 @@ resource "aws_ecs_task_definition" "ashok_hotel_task_definition" {
 DEFINITION
 }
 
-# Step 8: ECS Service
+# Step 11: ECS Service
 resource "aws_ecs_service" "ashok_hotel_service" {
   name            = "ashok_hotel-service"
   cluster         = aws_ecs_cluster.ashok_hotel_cluster.id
