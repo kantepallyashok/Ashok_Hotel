@@ -203,7 +203,17 @@ jobs:
         echo "Waiting for 300 seconds before destroying Terraform resources..."
         sleep 300
 
-    # Destroy Terraform resources
-    - name: Terraform Destroy
-      run: terraform destroy -auto-approve
+    # Initialize Terraform (cleanup)
+    - name: Terraform Init (Cleanup)
+      run: terraform init
+      working-directory: ./terraform
+
+    # Plan Terraform destruction
+    - name: Terraform Plan (Destruction)
+      run: terraform plan -destroy -out=tfplan
+      working-directory: ./terraform
+
+    # Apply Terraform destruction
+    - name: Terraform Apply (Destruction)
+      run: terraform apply -auto-approve tfplan
       working-directory: ./terraform
