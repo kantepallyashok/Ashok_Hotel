@@ -29,7 +29,7 @@ data "aws_availability_zones" "available" {
 }
 
 resource "aws_subnet" "public_subnet" {
-  count                = 2
+  count                = 1
   vpc_id               = aws_vpc.new_vpc.id
   cidr_block           = cidrsubnet(aws_vpc.new_vpc.cidr_block, 8, count.index)
   map_public_ip_on_launch = true
