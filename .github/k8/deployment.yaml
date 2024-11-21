@@ -1,22 +1,31 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: my-deployment
+  name: ashok-hotel-deployment
+  labels:
+    app: ashok-hotel
 spec:
-  replicas: 2  # Adjust the number of replicas as needed
+  replicas: 2  # Number of pods (adjust as needed)
   selector:
     matchLabels:
-      app: my-app
+      app: ashok-hotel
   template:
     metadata:
       labels:
-        app: my-app
+        app: ashok-hotel
     spec:
       containers:
-        - name: my-container
-          image: "${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
-          ports:
-            - containerPort: 3000  # Adjust to your application's port
-          env:
-            - name: ENVIRONMENT
-              value: "production"  # Add any necessary environment variables here
+      - name: ashok-hotel
+        image: "{{ .Values.ecrRepository }}:{{ .Values.imageTag }}"  # Replace with the correct image name
+        ports:
+        - containerPort: 3000  # Port your app listens on inside the container
+        env:
+          - name: NODE_ENV
+            value: "production"  # Optional, for setting environment variables
+        resources:
+          limits:
+            memory: "512Mi"  # Resource limits
+            cpu: "500m"  # CPU limits
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
