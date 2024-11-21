@@ -35,3 +35,8 @@ jobs:
       - name: Authenticate Docker to AWS ECR
         run: |
           aws ecr get-login-password --region ${{ env.AWS_REGION }}
+      # Step 4: Pull the Docker image from ECR
+      - name: Pull Docker image from ECR
+        run: |
+          docker pull ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
