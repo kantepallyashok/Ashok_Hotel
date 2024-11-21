@@ -53,3 +53,17 @@ jobs:
       - name: Fetch kubeconfig from EC2 instance
         run: |
           scp -o StrictHostKeyChecking=no -i ${{ secrets.SSH_PRIVATE_KEY }} ${EC2_USER}@${EC2_IP}:/home/${EC2_USER}/.kube/config ~/.kube/config
+
+      # Step 7: Deploy to Kubernetes
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl set image deployment/my-deployment my-container=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+
+      # Step 8: Verify Deployment
+      - name: Verify Deployment
+        run: |
+          kubectl rollout status deployment/my-deployment
+          kubectl get pods
+          kubectl get svc
