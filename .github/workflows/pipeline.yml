@@ -3,8 +3,7 @@ name: Build, Deploy to AWS ECR, ECS, and Terraform Deployment
 on:
   push:
     branches:
-    - main
-    - test
+    - ma
 
 env:
   AWS_REGION: us-east-1
