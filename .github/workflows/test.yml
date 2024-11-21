@@ -45,15 +45,21 @@ jobs:
 
       # Step 5: Setup SSH Access to EC2 for fetching Kubeconfig
       - name: Set up SSH key
-        uses: webfactory/ssh-agent@v0.5.3
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      # Step 6: Fetch kubeconfig from EC2 instance
-      - name: Fetch kubeconfig from EC2 instance
         run: |
-          scp -o StrictHostKeyChecking=no -i ${{ secrets.SSH_PRIVATE_KEY }} ${EC2_USER}@${EC2_IP}:/home/${EC2_USER}/.kube/config ~/.kube/config
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/private_key
+          chmod 600 /tmp/private_key
+          eval $(ssh-agent -s)
+          ssh-add /tmp/private_key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
 
+      # Copy the kubeconfig from EC2 to local machine
+      - name: Copy kubeconfig from EC2 instance
+        run: |
+          scp -o StrictHostKeyChecking=no -i /tmp/private_key ${EC2_USER}@${EC2_IP}:/home/${EC2_USER}/.kube/config ~/.kube/config
+        env:
+          EC2_USER: ubuntu
+          EC2_IP: 3.93.23.38
       # Step 7: Deploy to Kubernetes
       - name: Deploy to Kubernetes
         run: |
