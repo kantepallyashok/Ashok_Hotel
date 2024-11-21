@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: ashok-hotel
-        image: "{{ .Values.ecrRepository }}:{{ .Values.imageTag }}"  # Replace with the correct image name
+        image: "863518440386.dkr.ecr.us-east-1.amazonaws.com/ashok_hotel:latest"  # Hardcoded ECR image URL and tag
         ports:
         - containerPort: 3000  # Port your app listens on inside the container
         env:
