@@ -1,0 +1,61 @@
+name: Deploy Docker Image to EC2 Kubernetes Cluster
+
+on:
+  push:
+    branches:
+      - main  # Trigger on push to the 'main' branch (adjust as needed)
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}  # Replace with your AWS region, e.g., us-east-1
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}  # Replace with your AWS account ID
+      ECR_REPOSITORY: ashok_hotel  # Name of your ECR repository
+      IMAGE_TAG: latest  # The tag of the image (latest in your case)
+      EC2_IP: 3.93.23.38  # Public IP of your EC2 instance
+      EC2_USER: ubuntu  # SSH user for EC2 (commonly 'ubuntu' for Ubuntu-based instances)
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  # SSH private key (stored in GitHub Secrets)
+
+    steps:
+      # Step 1: Checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up AWS credentials (for ECR authentication)
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Step 3: Authenticate Docker to AWS ECR
+      - name: Authenticate Docker to AWS ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+      # Step 4: Setup SSH Access to EC2 for fetching Kubeconfig
+      - name: Set up SSH key
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      # Step 5: Fetch kubeconfig from EC2 instance
+      - name: Fetch kubeconfig from EC2 instance
+        run: |
+          scp -o StrictHostKeyChecking=no -i ${{ secrets.SSH_PRIVATE_KEY }} ${EC2_USER}@${EC2_IP}:/home/${EC2_USER}/.kube/config ~/.kube/config
+
+      # Step 6: Deploy to Kubernetes
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl set image deployment/my-deployment my-container=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
+      # Step 7: Verify Deployment
+      - name: Verify Deployment
+        run: |
+          kubectl get pods
+          kubectl get svc
