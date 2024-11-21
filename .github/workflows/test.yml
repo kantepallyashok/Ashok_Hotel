@@ -45,3 +45,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.5.3
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      # Step 6: Fetch kubeconfig from EC2 instance
+      - name: Fetch kubeconfig from EC2 instance
+        run: |
+          scp -o StrictHostKeyChecking=no -i ${{ secrets.SSH_PRIVATE_KEY }} ${EC2_USER}@${EC2_IP}:/home/${EC2_USER}/.kube/config ~/.kube/config
