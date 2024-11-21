@@ -1,36 +1,100 @@
-# Step 2: Configure the Terraform backend with S3
+# Step 1: Configure the Terraform backend with S3
 terraform {
   backend "s3" {
-    bucket = "ashok-tf"  # Use the same bucket name
-    key    = "terraform.tfstate"
-    region = "us-east-1"
+    bucket  = "ashok-tf"
+    key     = "terraform.tfstate"
+    region  = "us-east-1"
     encrypt = true
   }
 }
 
+# Step 2: AWS Provider Configuration
 provider "aws" {
   region = "us-east-1"
 }
 
-# Step 3: VPC Data Source
-data "aws_vpc" "default" {
-  default = true
-}
+# Step 3: Create a New VPC
+resource "aws_vpc" "new_vpc" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
 
-# Step 4: Default Subnets
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+  tags = {
+    Name = "new-vpc"
   }
 }
 
-# Default Security Group (get the default security group for the default VPC)
-data "aws_security_group" "default" {
-  vpc_id = data.aws_vpc.default.id
+# Step 4: Create Public Subnets
+data "aws_availability_zones" "available" {
+  state = "available"
 }
 
-# Step 5: ECS Cluster
+resource "aws_subnet" "public_subnet" {
+  count                = 1
+  vpc_id               = aws_vpc.new_vpc.id
+  cidr_block           = cidrsubnet(aws_vpc.new_vpc.cidr_block, 8, count.index)
+  map_public_ip_on_launch = true
+  availability_zone    = data.aws_availability_zones.available.names[count.index]
+
+  tags = {
+    Name = "public-subnet-${count.index}"
+  }
+}
+
+# Step 5: Create an Internet Gateway
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.new_vpc.id
+
+  tags = {
+    Name = "new-vpc-igw"
+  }
+}
+
+# Step 6: Create a Route Table
+resource "aws_route_table" "public_rt" {
+  vpc_id = aws_vpc.new_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "public-route-table"
+  }
+}
+
+# Step 7: Associate the Route Table with the Public Subnet
+resource "aws_route_table_association" "public_subnet_assoc" {
+  count          = length(aws_subnet.public_subnet)
+  subnet_id      = aws_subnet.public_subnet[count.index].id
+  route_table_id = aws_route_table.public_rt.id
+}
+
+# Step 8: Security Group for ECS
+resource "aws_security_group" "ecs_sg" {
+  vpc_id = aws_vpc.new_vpc.id
+
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "ecs-sg"
+  }
+}
+
+# Step 9: ECS Cluster
 resource "aws_ecs_cluster" "ashok_hotel_cluster" {
   name = "ashok_hotel-cluster"
 
@@ -44,7 +108,7 @@ resource "aws_ecs_cluster" "ashok_hotel_cluster" {
   }
 }
 
-# Step 6: ECS Task Definition
+# Step 10: ECS Task Definition
 resource "aws_ecs_task_definition" "ashok_hotel_task_definition" {
   family                   = "ashok_hotel"
   execution_role_arn       = "arn:aws:iam::863518440386:role/ecsTaskExecutionRole"
@@ -54,12 +118,12 @@ resource "aws_ecs_task_definition" "ashok_hotel_task_definition" {
   memory                   = "3072"
 
   runtime_platform {
-    cpu_architecture    = "X86_64"
+    cpu_architecture       = "X86_64"
     operating_system_family = "LINUX"
   }
 
   container_definitions = <<DEFINITION
-[ 
+[
   {
     "name": "ashok_hotel",
     "image": "863518440386.dkr.ecr.us-east-1.amazonaws.com/ashok_hotel:latest",
@@ -85,7 +149,7 @@ resource "aws_ecs_task_definition" "ashok_hotel_task_definition" {
 DEFINITION
 }
 
-# Step 7: ECS Service
+# Step 11: ECS Service
 resource "aws_ecs_service" "ashok_hotel_service" {
   name            = "ashok_hotel-service"
   cluster         = aws_ecs_cluster.ashok_hotel_cluster.id
@@ -94,9 +158,9 @@ resource "aws_ecs_service" "ashok_hotel_service" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = data.aws_subnets.default.ids
-    security_groups = [data.aws_security_group.default.id]
-    assign_public_ip = true  # Only for public subnets
+    subnets          = aws_subnet.public_subnet[*].id
+    security_groups  = [aws_security_group.ecs_sg.id]
+    assign_public_ip = true
   }
 
   deployment_controller {
