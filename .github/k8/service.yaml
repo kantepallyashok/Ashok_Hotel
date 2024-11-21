@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: my-service
+  name: ashok-hotel-service
 spec:
   selector:
-    app: my-app
+    app: ashok-hotel
   ports:
     - protocol: TCP
-      port: 80
-      targetPort: 3000  # Match the port to what your app exposes
-  type: LoadBalancer  # This creates an external load balancer (if using AWS)
+      port: 80  # Port the service exposes to the outside world
+      targetPort: 3000  # Port your application is listening on inside the container
+  type: LoadBalancer  # Expose to the outside world using LoadBalancer (use NodePort if no external load balancer)
