@@ -60,7 +60,7 @@ jobs:
           scp -o StrictHostKeyChecking=no -i /tmp/private_key ${EC2_USER}@${EC2_IP}:/home/${EC2_USER}/.kube/config ~/.kube/config
         env:
           EC2_USER: ubuntu
-          EC2_IP: 3.93.23.38
+          EC2_IP: 18.215.156.233
 
       # Step 7: Deploy to Kubernetes
       - name: Deploy to Kubernetes
