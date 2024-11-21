@@ -4,9 +4,10 @@ metadata:
   name: ashok-hotel-service
 spec:
   selector:
-    app: ashok-hotel
+    app: ashok-hotel  # This should match the label in your deployment.yaml
   ports:
     - protocol: TCP
-      port: 80  # Port the service exposes to the outside world
-      targetPort: 3000  # Port your application is listening on inside the container
-  type: LoadBalancer  # Expose to the outside world using LoadBalancer (use NodePort if no external load balancer)
+      port: 80          # The port your service will expose
+      targetPort: 3000   # The port your container listens on
+      nodePort: 30001    # Expose this port on the node's public IP
+  type: NodePort        # Expose the service on a NodePort
