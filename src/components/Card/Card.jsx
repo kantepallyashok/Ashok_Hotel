@@ -14,7 +14,7 @@ const Card = () => {
       </div>
       <div className="cardImg">
         <img src={Night} alt="nightImg" />
-        <h1>Partners</h1>
+        <h1>Night_Life</h1>
         <span>Explore the city's top nightlife outlets</span>
       </div>
       <div className="cardImg">
